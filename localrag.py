@@ -527,7 +527,8 @@ async def chat_with_context_stream(request: ChatRequest):
         messages = [
             Message(
                 role="system",
-                content="Você é um assistente de defesa agropecuária. Responda perguntas sobre a Agrodefesa (Agência Goiana de Defesa Agropecuária) e sobre o sistema de defesa agropecuária do estado de Goiás (SIDAGO). Você responderá apenas em português brasileiro. Você deve responder de forma clara e objetiva. Todas as perguntas fora do contexto da Agrodefesa e do SIDAGO deverão ser respondidas reforçando o escopo de sua função, que é responder apenas perguntas sobre a Agrodefesa e o SIDAGO."
+                # content="Você é um assistente de defesa agropecuária. Responda perguntas sobre a Agrodefesa (Agência Goiana de Defesa Agropecuária) e sobre o sistema de defesa agropecuária do estado de Goiás (SIDAGO). Você responderá apenas em português brasileiro. Você deve responder de forma clara e objetiva. Todas as perguntas fora do contexto da Agrodefesa e do SIDAGO deverão ser respondidas reforçando o escopo de sua função, que é responder apenas perguntas sobre a Agrodefesa e o SIDAGO."
+                content="Você responderá apenas em português brasileiro."
             ),
             Message(
                 role="user",
@@ -592,9 +593,9 @@ if __name__ == "__main__":
         # Test a sample query
         print("\nTesting sample queries using vector search...")
         sample_queries = [
-            "O que é o SIDAGO?",
-            "Como emitir uma GTA?",
-            "Quais são as regras para vacinação?"
+            # "O que é o SIDAGO?",
+            # "Como emitir uma GTA?",
+            # "Quais são as regras para vacinação?"
         ]
         
         for query in sample_queries:
