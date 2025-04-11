@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente SIDAGO Local</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+
+        .sidebar {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            border-radius: 10px;
+            max-width: 80%;
+        }
+
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: auto;
+        }
+
+        .assistant-message {
+            background-color: #e9ecef;
+            color: #212529;
+        }
+
+        .chat-input {
+            padding: 20px;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .drop-zone {
+            border: 2px dashed #dee2e6;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .drop-zone.dragover {
+            background-color: #e9ecef;
+            border-color: #007bff;
+        }
+
+        .file-list {
+            margin-top: 20px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .file-item {
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .typing-indicator.visible {
+            display: block;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #666;
+            border-radius: 50%;
+            margin-right: 3px;
+            animation: typing 1s infinite;
+        }
+
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .status-bar {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #e9ecef;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .status-ok {
+            background-color: #28a745;
+        }
+
+        .status-warning {
+            background-color: #ffc107;
+        }
+
+        .status-error {
+            background-color: #dc3545;
+        }
+
+        .markdown code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        /* Small screen adjustments */
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="drop-zone" id="dropZone">
+                <p>Arraste e solte arquivos PDF aqui</p>
+                <p>ou</p>
+                <button onclick="document.getElementById('fileInput').click()">Escolher arquivo</button>
+                <input type="file" id="fileInput" style="display: none" accept=".pdf" />
+            </div>
+            <div class="file-list" id="fileList">
+                <!-- Processed files will be listed here -->
+            </div>
+            <div class="status-bar" id="statusBar">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Verificando status...</span>
+            </div>
+        </div>
+        <div class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message assistant-message">
+                    Olá! Sou o assistente da Agrodefesa. Como posso ajudar?
+                </div>
+            </div>
+            <div class="typing-indicator" id="typingIndicator">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="messageInput" placeholder="Digite sua pergunta..." />
+                <button onclick="sendMessage()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const chatMessages = document.getElementById('chatMessages');
+        const messageInput = document.getElementById('messageInput');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        
+        // Check server status
+        async function checkStatus() {
+            try {
+                const response = await fetch('/');
+                if (response.ok) {
+                    statusIndicator.className = 'status-indicator status-ok';
+                    statusText.textContent = 'Servidor local ativo';
+                    return true;
+                } else {
+                    statusIndicator.className = 'status-indicator status-warning';
+                    statusText.textContent = 'Servidor com problemas';
+                    return false;
+                }
+            } catch (error) {
+                statusIndicator.className = 'status-indicator status-error';
+                statusText.textContent = 'Servidor offline';
+                return false;
+            }
+        }
+        
+        // Check status on page load
+        checkStatus();
+        
+        // Recheck status every 30 seconds
+        setInterval(checkStatus, 30000);
+
+        // Handle drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropZone.classList.add('dragover');
+        }
+
+        function unhighlight(e) {
+            dropZone.classList.remove('dragover');
+        }
+
+        dropZone.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFileSelect, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                if (file.type === 'application/pdf') {
+                    // Show loading indicator for this file
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.textContent = `${file.name} - Processando...`;
+                    fileList.appendChild(fileItem);
+                    
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    try {
+                        const response = await fetch('/upload-pdf/', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const result = await response.json();
+                        
+                        if (result.status === 'success') {
+                            fileItem.textContent = `${file.name} - ${result.chunks} chunks processados`;
+                            // Add success message to chat
+                            addMessage(`Arquivo ${file.name} processado com sucesso. Você pode fazer perguntas sobre ele agora.`, 'assistant');
+                        } else {
+                            fileItem.textContent = `${file.name} - Erro: ${result.message}`;
+                            fileItem.style.backgroundColor = '#f8d7da';
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        fileItem.textContent = `${file.name} - Erro de conexão`;
+                        fileItem.style.backgroundColor = '#f8d7da';
+                    }
+                } else {
+                    alert('Por favor, envie apenas arquivos PDF.');
+                }
+            }
+        }
+
+        // Handle chat functionality
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // Add user message to chat
+            addMessage(message, 'user');
+            messageInput.value = '';
+
+            // Check server status before proceeding
+            if (!await checkStatus()) {
+                addMessage('Não foi possível se conectar ao servidor. Verifique se o serviço está em execução.', 'assistant');
+                return;
+            }
+
+            // Show typing indicator
+            typingIndicator.classList.add('visible');
+
+            try {
+                const response = await fetch('/chat/stream/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: message,
+                        temperature: 0.0,
+                        max_tokens: -1,
+                        stream: true
+                    })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+
+                while (true) {
+                    const {value, done} = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.content) {
+                                    assistantMessage += data.content;
+                                    updateLastAssistantMessage(assistantMessage);
+                                } else if (data.error) {
+                                    console.error('Error from server:', data.error);
+                                    assistantMessage += `\n\nErro: ${data.error}`;
+                                    updateLastAssistantMessage(assistantMessage);
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Desculpe, ocorreu um erro ao processar sua mensagem. Verifique se o servidor LLM está em execução.', 'assistant');
+            } finally {
+                typingIndicator.classList.remove('visible');
+            }
+        }
+
+        function addMessage(text, role) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}-message`;
+            
+            // Simple Markdown-like formatting
+            if (role === 'assistant') {
+                // Convert code blocks
+                text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            }
+            
+            messageDiv.innerHTML = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function updateLastAssistantMessage(text) {
+            let lastMessage = chatMessages.querySelector('.assistant-message:last-child');
+            if (!lastMessage || lastMessage.classList.contains('user-message')) {
+                lastMessage = document.createElement('div');
+                lastMessage.className = 'message assistant-message';
+                chatMessages.appendChild(lastMessage);
+            }
+            
+            // Simple Markdown-like formatting
+            const formattedText = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            
+            lastMessage.innerHTML = formattedText;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    </script>
+</body>
+</html>
