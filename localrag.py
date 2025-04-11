@@ -568,6 +568,32 @@ Responda de forma clara e direta, usando apenas as informações do contexto for
             media_type="text/event-stream"
         )
 
+@app.get("/database-stats/")
+async def get_database_stats():
+    """Get statistics about the database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get total number of documents
+        cursor.execute("SELECT COUNT(*) FROM documents")
+        total_chunks = cursor.fetchone()[0]
+        
+        return {
+            "status": "success",
+            "total_chunks": total_chunks
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
+
 if __name__ == "__main__":
     # Setup the database
     setup_success = setup_database()

@@ -270,6 +270,9 @@
                 <div class="status-indicator" id="statusIndicator"></div>
                 <span id="statusText">Verificando status...</span>
             </div>
+            <div class="status-bar" id="dbStats">
+                <span id="dbStatsText">Chunks no banco: carregando...</span>
+            </div>
             <button id="clearDbButton" class="danger-button" onclick="clearDatabase()">Limpar Banco de Dados</button>
         </div>
         <div class="chat-container">
@@ -395,6 +398,8 @@
                             fileItem.textContent = `${file.name} - ${result.chunks} chunks processados`;
                             // Add success message to chat
                             addMessage(`Arquivo ${file.name} processado com sucesso. Você pode fazer perguntas sobre ele agora.`, 'assistant');
+                            // Update database stats
+                            updateDatabaseStats();
                         } else {
                             fileItem.textContent = `${file.name} - Erro: ${result.message}`;
                             fileItem.style.backgroundColor = '#f8d7da';
@@ -428,6 +433,8 @@
                     fileList.innerHTML = '';
                     // Add success message to chat
                     addMessage('Banco de dados limpo com sucesso. Todos os documentos foram removidos.', 'assistant');
+                    // Update database stats
+                    updateDatabaseStats();
                 } else {
                     alert(`Erro ao limpar o banco de dados: ${result.message}`);
                 }
@@ -633,6 +640,32 @@
             
             return text;
         }
+
+        // Add after the checkStatus function
+        async function updateDatabaseStats() {
+            try {
+                const response = await fetch('/database-stats/');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('dbStatsText').textContent = `Chunks no banco: ${data.total_chunks}`;
+                } else {
+                    document.getElementById('dbStatsText').textContent = 'Erro ao carregar estatísticas';
+                }
+            } catch (error) {
+                console.error('Error fetching database stats:', error);
+                document.getElementById('dbStatsText').textContent = 'Erro ao carregar estatísticas';
+            }
+        }
+        
+        // Update stats on page load
+        updateDatabaseStats();
+        
+        // Update stats every 30 seconds along with status
+        setInterval(() => {
+            checkStatus();
+            updateDatabaseStats();
+        }, 30000);
     </script>
 </body>
 </html>
