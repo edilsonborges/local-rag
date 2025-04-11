@@ -27,9 +27,13 @@ Este é um sistema de Recuperação Aumentada por Geração (RAG) que funciona l
 
 2. Crie um ambiente virtual e instale as dependências:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # No Windows: venv\Scripts\activate
+   python -m venv .venv
+   source .venv/bin/activate  # No Windows: .venv\Scripts\activate
    pip install -r requirements.txt
+
+   pip install lmstudio
+   lms server start
+   lms get hermes-3-llama-3.2-3b@q4_k_m
    ```
 
 3. Execute o servidor:
