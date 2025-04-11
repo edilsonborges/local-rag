@@ -92,6 +92,14 @@
             background-color: #0056b3;
         }
 
+        .danger-button {
+            background-color: #dc3545;
+        }
+
+        .danger-button:hover {
+            background-color: #bd2130;
+        }
+
         .drop-zone {
             border: 2px dashed #dee2e6;
             padding: 20px;
@@ -177,10 +185,63 @@
             background-color: #dc3545;
         }
 
+        .source-reference {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+            font-size: 14px;
+            border-left: 3px solid #6c757d;
+            display: none;
+        }
+
+        .source-toggle {
+            display: block;
+            margin-top: 10px;
+            cursor: pointer;
+            color: #007bff;
+            font-size: 14px;
+        }
+
+        .source-toggle:hover {
+            text-decoration: underline;
+        }
+
+        .markdown {
+            line-height: 1.6;
+        }
+
         .markdown code {
             background-color: #f8f9fa;
             padding: 2px 4px;
             border-radius: 4px;
+        }
+
+        .markdown pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+
+        .markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+
+        .markdown p {
+            margin-bottom: 0.75em;
+        }
+
+        .markdown ul, .markdown ol {
+            padding-left: 20px;
+        }
+
+        .markdown blockquote {
+            border-left: 4px solid #ced4da;
+            padding-left: 10px;
+            margin-left: 0;
+            color: #6c757d;
         }
 
         /* Small screen adjustments */
@@ -197,14 +258,15 @@
     <div class="container">
         <div class="sidebar">
             <div class="drop-zone" id="dropZone">
-                <p>Arraste e solte arquivos PDF aqui</p>
+                <p>Arraste e solte arquivos PDF ou Markdown aqui</p>
                 <p>ou</p>
                 <button onclick="document.getElementById('fileInput').click()">Escolher arquivo</button>
-                <input type="file" id="fileInput" style="display: none" accept=".pdf" />
+                <input type="file" id="fileInput" style="display: none" accept=".pdf,.md,.markdown" />
             </div>
             <div class="file-list" id="fileList">
                 <!-- Processed files will be listed here -->
             </div>
+            <button id="clearDbButton" class="danger-button" onclick="clearDatabase()">Limpar Banco de Dados</button>
             <div class="status-bar" id="statusBar">
                 <div class="status-indicator" id="statusIndicator"></div>
                 <span id="statusText">Verificando status...</span>
@@ -306,7 +368,11 @@
 
         async function handleFiles(files) {
             for (const file of files) {
-                if (file.type === 'application/pdf') {
+                if (file.type === 'application/pdf' || 
+                    file.type === 'text/markdown' || 
+                    file.name.endsWith('.md') || 
+                    file.name.endsWith('.markdown')) {
+                    
                     // Show loading indicator for this file
                     const fileItem = document.createElement('div');
                     fileItem.className = 'file-item';
@@ -317,7 +383,7 @@
                     formData.append('file', file);
 
                     try {
-                        const response = await fetch('/upload-pdf/', {
+                        const response = await fetch('/upload-file/', {
                             method: 'POST',
                             body: formData
                         });
@@ -338,8 +404,35 @@
                         fileItem.style.backgroundColor = '#f8d7da';
                     }
                 } else {
-                    alert('Por favor, envie apenas arquivos PDF.');
+                    alert('Por favor, envie apenas arquivos PDF ou Markdown.');
                 }
+            }
+        }
+
+        // Function to clear the database
+        async function clearDatabase() {
+            if (!confirm('Tem certeza que deseja limpar todo o banco de dados? Essa ação não pode ser desfeita.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/clear-database/', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // Clear the file list
+                    fileList.innerHTML = '';
+                    // Add success message to chat
+                    addMessage('Banco de dados limpo com sucesso. Todos os documentos foram removidos.', 'assistant');
+                } else {
+                    alert(`Erro ao limpar o banco de dados: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Erro de conexão ao tentar limpar o banco de dados.');
             }
         }
 
@@ -350,6 +443,9 @@
             }
         });
 
+        // Store current source reference
+        let currentSourceRef = null;
+
         async function sendMessage() {
             const message = messageInput.value.trim();
             if (!message) return;
@@ -357,6 +453,9 @@
             // Add user message to chat
             addMessage(message, 'user');
             messageInput.value = '';
+
+            // Reset current source reference
+            currentSourceRef = null;
 
             // Check server status before proceeding
             if (!await checkStatus()) {
@@ -396,13 +495,20 @@
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.slice(6));
+                                
+                                // Handle source reference information
+                                if (data.event === 'source') {
+                                    currentSourceRef = data.data;
+                                    continue;
+                                }
+                                
                                 if (data.content) {
                                     assistantMessage += data.content;
-                                    updateLastAssistantMessage(assistantMessage);
+                                    updateLastAssistantMessage(assistantMessage, currentSourceRef);
                                 } else if (data.error) {
                                     console.error('Error from server:', data.error);
                                     assistantMessage += `\n\nErro: ${data.error}`;
-                                    updateLastAssistantMessage(assistantMessage);
+                                    updateLastAssistantMessage(assistantMessage, currentSourceRef);
                                 }
                             } catch (e) {
                                 console.error('Error parsing SSE data:', e);
@@ -422,18 +528,18 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}-message`;
             
-            // Simple Markdown-like formatting
             if (role === 'assistant') {
-                // Convert code blocks
-                text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+                // Process markdown in assistant messages
+                messageDiv.innerHTML = renderMarkdown(text);
+            } else {
+                messageDiv.textContent = text;
             }
             
-            messageDiv.innerHTML = text;
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        function updateLastAssistantMessage(text) {
+        function updateLastAssistantMessage(text, sourceRef) {
             let lastMessage = chatMessages.querySelector('.assistant-message:last-child');
             if (!lastMessage || lastMessage.classList.contains('user-message')) {
                 lastMessage = document.createElement('div');
@@ -441,11 +547,90 @@
                 chatMessages.appendChild(lastMessage);
             }
             
-            // Simple Markdown-like formatting
-            const formattedText = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // Clear any existing source references and toggle buttons
+            const existingSource = lastMessage.querySelector('.source-reference');
+            if (existingSource) existingSource.remove();
             
-            lastMessage.innerHTML = formattedText;
+            const existingToggle = lastMessage.querySelector('.source-toggle');
+            if (existingToggle) existingToggle.remove();
+            
+            // Process markdown
+            lastMessage.innerHTML = renderMarkdown(text);
+            
+            // Add source reference and toggle if we have source information
+            if (sourceRef) {
+                // Create source toggle button
+                const sourceToggle = document.createElement('span');
+                sourceToggle.className = 'source-toggle';
+                sourceToggle.textContent = 'Mostrar fonte';
+                sourceToggle.onclick = function() {
+                    const sourceElement = lastMessage.querySelector('.source-reference');
+                    if (sourceElement.style.display === 'none' || !sourceElement.style.display) {
+                        sourceElement.style.display = 'block';
+                        sourceToggle.textContent = 'Ocultar fonte';
+                    } else {
+                        sourceElement.style.display = 'none';
+                        sourceToggle.textContent = 'Mostrar fonte';
+                    }
+                };
+                lastMessage.appendChild(sourceToggle);
+                
+                // Create source reference element
+                const sourceElement = document.createElement('div');
+                sourceElement.className = 'source-reference';
+                sourceElement.style.display = 'none';
+                
+                // Format source information
+                let sourceContent = '';
+                if (sourceRef.source) {
+                    sourceContent += `<strong>Fonte:</strong> ${sourceRef.source}<br>`;
+                }
+                if (sourceRef.context) {
+                    sourceContent += `<strong>Contexto:</strong> ${sourceRef.context}<br>`;
+                }
+                if (sourceRef.score) {
+                    sourceContent += `<strong>Relevância:</strong> ${(sourceRef.score * 100).toFixed(1)}%`;
+                }
+                
+                sourceElement.innerHTML = sourceContent;
+                lastMessage.appendChild(sourceElement);
+            }
+            
             chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Basic Markdown rendering
+        function renderMarkdown(text) {
+            if (!text) return '';
+            
+            // Process code blocks (```code```)
+            text = text.replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>');
+            
+            // Process inline code (`code`)
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            
+            // Process headers
+            text = text.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+            text = text.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+            text = text.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+            
+            // Process lists
+            text = text.replace(/^\* (.*$)/gm, '<ul><li>$1</li></ul>');
+            text = text.replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>');
+            text = text.replace(/^\d\. (.*$)/gm, '<ol><li>$1</li></ol>');
+            
+            // Process emphasis and strong
+            text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            text = text.replace(/_([^_]+)_/g, '<em>$1</em>');
+            
+            // Process blockquotes
+            text = text.replace(/^> (.*$)/gm, '<blockquote>$1</blockquote>');
+            
+            // Process paragraphs - this is a simplified approach
+            text = text.replace(/\n\n/g, '<br><br>');
+            
+            return text;
         }
     </script>
 </body>

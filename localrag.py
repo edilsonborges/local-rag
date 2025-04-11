@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -21,6 +21,7 @@ import httpx
 import subprocess
 import sys
 import platform
+import time
 
 # Database settings
 DB_PATH = "localrag.db"
@@ -89,6 +90,26 @@ def setup_database():
         if 'conn' in locals():
             conn.close()
 
+def clear_database():
+    """Clear all records from the database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM documents")
+        
+        conn.commit()
+        print("✅ Database cleared successfully")
+        return True
+    except Exception as e:
+        print(f"❌ Error clearing database: {str(e)}")
+        return False
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
+
 def extract_text_from_pdf(pdf_path):
     """Extract text from a PDF file"""
     with open(pdf_path, "rb") as f:
@@ -97,6 +118,11 @@ def extract_text_from_pdf(pdf_path):
         for page in pdf_reader.pages:
             text += page.extract_text()
     return text
+
+def extract_text_from_markdown(md_path):
+    """Extract text from a Markdown file"""
+    with open(md_path, "r", encoding="utf-8") as f:
+        return f.read()
 
 def store_documents_in_db(documents, embeddings, source_file=None):
     """Store documents and their embeddings in the database"""
@@ -161,11 +187,18 @@ def load_documents_from_db():
         if 'conn' in locals():
             conn.close()
 
-def process_pdf(pdf_path):
-    """Process PDF and split into chunks"""
-    # If we don't have processed documents, extract from PDF
-    print(f"Extracting text from {pdf_path}...")
-    text = extract_text_from_pdf(pdf_path)
+def process_file(file_path):
+    """Process file (PDF or Markdown) and split into chunks"""
+    # Determine file type and extract text
+    if file_path.lower().endswith('.pdf'):
+        print(f"Extracting text from PDF: {file_path}...")
+        text = extract_text_from_pdf(file_path)
+    elif file_path.lower().endswith(('.md', '.markdown')):
+        print(f"Extracting text from Markdown: {file_path}...")
+        text = extract_text_from_markdown(file_path)
+    else:
+        raise ValueError(f"Unsupported file type: {file_path}")
+    
     print(f"Extracted {len(text)} characters of text")
     
     # Split text into chunks
@@ -184,7 +217,7 @@ def process_pdf(pdf_path):
     print("Embeddings generated")
     
     # Store documents and embeddings in the database
-    store_documents_in_db(documents, doc_embeddings, pdf_path)
+    store_documents_in_db(documents, doc_embeddings, file_path)
     
     return documents, doc_embeddings
 
@@ -337,26 +370,36 @@ async def get_chat_interface():
     """Serve the chat interface HTML"""
     return FileResponse("static/index.html")
 
-@app.post("/upload-pdf/")
-async def upload_pdf(file: UploadFile = File(...)):
-    """Upload a PDF file and process it"""
+@app.post("/upload-file/")
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a file (PDF or Markdown) and process it"""
     try:
         content = await file.read()
         filename = file.filename
+        
+        # Check file type
+        if not filename.lower().endswith(('.pdf', '.md', '.markdown')):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "Only PDF and Markdown files are supported"
+                }
+            )
         
         # Save the file
         with open(f"temp_{filename}", "wb") as f:
             f.write(content)
         
-        # Process the PDF
-        documents, _ = process_pdf(f"temp_{filename}")
+        # Process the file
+        documents, _ = process_file(f"temp_{filename}")
         
         # Clean up
         os.remove(f"temp_{filename}")
         
         return {
             "status": "success",
-            "message": f"PDF {filename} processed successfully",
+            "message": f"File {filename} processed successfully",
             "chunks": len(documents)
         }
     except Exception as e:
@@ -364,6 +407,15 @@ async def upload_pdf(file: UploadFile = File(...)):
             "status": "error",
             "message": str(e)
         }
+
+@app.post("/clear-database/")
+async def clear_db():
+    """Clear all records from the database"""
+    success = clear_database()
+    if success:
+        return {"status": "success", "message": "Database cleared successfully"}
+    else:
+        return {"status": "error", "message": "Failed to clear database"}
 
 class QueryRequest(BaseModel):
     query: str
@@ -405,7 +457,7 @@ class ChatResponse(BaseModel):
 
 CHAT_API_URL = "http://localhost:1234/v1/chat/completions"
 
-async def stream_ai_response(messages: List[Message], temperature: float = 0.0, max_tokens: int = -1):
+async def stream_ai_response(messages: List[Message], temperature: float = 0.0, max_tokens: int = -1, source_ref=None):
     """Stream response from the AI model"""
     try:
         payload = {
@@ -415,6 +467,14 @@ async def stream_ai_response(messages: List[Message], temperature: float = 0.0, 
             "max_tokens": max_tokens,
             "stream": True
         }
+        
+        # Send header with source reference information
+        if source_ref:
+            source_data = {
+                "event": "source",
+                "data": source_ref
+            }
+            yield f"data: {json.dumps(source_data)}\n\n"
         
         async with httpx.AsyncClient() as client:
             async with client.stream('POST', CHAT_API_URL, json=payload, headers={"Content-Type": "application/json"}) as response:
@@ -456,6 +516,13 @@ async def chat_with_context_stream(request: ChatRequest):
                 media_type="text/event-stream"
             )
         
+        # Prepare source reference information for the client
+        source_ref = {
+            "source": best_doc['metadata'].get('source', 'unknown'),
+            "context": best_doc['text'],
+            "score": float(score)
+        }
+        
         # Create messages for the AI agent
         messages = [
             Message(
@@ -476,7 +543,12 @@ Responda de forma clara e direta, usando apenas as informações do contexto for
         ]
         
         return StreamingResponse(
-            stream_ai_response(messages, temperature=request.temperature, max_tokens=request.max_tokens),
+            stream_ai_response(
+                messages, 
+                temperature=request.temperature, 
+                max_tokens=request.max_tokens,
+                source_ref=source_ref
+            ),
             media_type="text/event-stream"
         )
         
@@ -536,4 +608,4 @@ if __name__ == "__main__":
             else:
                 print(f"\nNo results found for query: {query}")
     else:
-        print("No documents found in database. Use the /upload-pdf/ endpoint to add documents.")
+        print("No documents found in database. Use the /upload-file/ endpoint to add documents.")
