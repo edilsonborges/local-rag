@@ -274,9 +274,7 @@
         </div>
         <div class="chat-container">
             <div class="chat-messages" id="chatMessages">
-                <div class="message assistant-message">
-                    Olá! Sou o assistente local. Como posso ajudar?
-                </div>
+                <!-- Initial message will be added by JavaScript -->
             </div>
             <div class="typing-indicator" id="typingIndicator">
                 <div class="dot"></div>
@@ -299,6 +297,9 @@
         const typingIndicator = document.getElementById('typingIndicator');
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
+        
+        // Add initial message
+        addMessage('Olá! Sou o assistente local. Como posso ajudar?', 'assistant');
         
         // Check server status
         async function checkStatus() {
