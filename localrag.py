@@ -22,9 +22,16 @@ import subprocess
 import sys
 import platform
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Database settings
 DB_PATH = "localrag.db"
+
+LLM_SERVER_HOST = os.getenv("LLM_SERVER_HOST", "localhost")
+LLM_SERVER_PORT = int(os.getenv("LLM_SERVER_PORT", "1234"))
+CHAT_API_URL = f"http://{LLM_SERVER_HOST}:{LLM_SERVER_PORT}/v1/chat/completions"
 
 # Initialize the text splitter
 text_splitter = RecursiveCharacterTextSplitter(
@@ -302,12 +309,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Check if LLM server is running
 def is_llm_server_running():
-    """Check if the LLM server is running on port 1234"""
+    """Check if the LLM server is running"""
     try:
         import socket
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(('localhost', 1234)) == 0
-    except:
+            # Use environment variables for host and port
+            return s.connect_ex((LLM_SERVER_HOST, LLM_SERVER_PORT)) == 0
+    except Exception as e:
+        print(f"Error checking LLM server status: {e}")
         return False
 
 # Start LLM server if not running
@@ -454,8 +463,6 @@ class ChatResponse(BaseModel):
     context: Optional[str]
     metadata: Optional[dict]
     score: Optional[float]
-
-CHAT_API_URL = "http://localhost:1234/v1/chat/completions"
 
 async def stream_ai_response(messages: List[Message], temperature: float = 0.0, max_tokens: int = -1, source_ref=None):
     """Stream response from the AI model"""
